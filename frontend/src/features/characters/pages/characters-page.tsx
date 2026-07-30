@@ -166,7 +166,7 @@ export function CharactersPage() {
             : [updated, ...old.items];
           return {
             ...old,
-            items: sortCharacters(items),
+            items: sortCharacters(items).slice(0, old.pageSize),
             total: exists ? old.total : old.total + 1,
           };
         },
@@ -181,9 +181,13 @@ export function CharactersPage() {
         name: t("characters.untitledCharacter"),
       }),
     onSuccess: (character) => {
+      upsertCharacterCache(toCharacterListItem(character));
+      queryClient.setQueryData(
+        ["character", character.id, selectedCharacterLoadVersion],
+        character,
+      );
       queryClient.invalidateQueries({ queryKey: ["characters", currentProjectId] });
       setCurrentCharacter(character.id);
-      setSelectedCharacterLoadVersion((prev) => prev + 1);
       toast.success(t("characters.created"));
     },
   });
