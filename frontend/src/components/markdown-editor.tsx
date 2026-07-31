@@ -30,6 +30,8 @@ export interface MarkdownEditorProps {
   lockedBanner?: React.ReactNode;
   maxWidth?: number;
   editorRef?: React.MutableRefObject<Editor | null>;
+  scrollTop?: number;
+  onScrollPositionChange?: (scrollTop: number) => void;
 }
 
 export function MarkdownEditor({
@@ -52,10 +54,16 @@ export function MarkdownEditor({
   lockedBanner,
   maxWidth = 800,
   editorRef: externalEditorRef,
+  scrollTop = 0,
+  onScrollPositionChange,
 }: MarkdownEditorProps) {
   const { t } = useTranslation();
   const contentSyncedRef = useRef(content);
   const editorContentRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const initialScrollTopRef = useRef(scrollTop);
+  const latestScrollTopRef = useRef(scrollTop);
+  const scrollPositionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const editor = useEditor({
     extensions: createMarkdownEditorExtensions({
@@ -108,9 +116,74 @@ export function MarkdownEditor({
     if (!currentEditor) return;
     if (content === contentSyncedRef.current) return;
 
+    const { from, to } = currentEditor.state.selection;
+    const wasFocused = currentEditor.isFocused;
     contentSyncedRef.current = content;
     currentEditor.commands.setContent(content, { contentType: "markdown", emitUpdate: false });
+    if (!wasFocused) return;
+
+    const maxPosition = Math.max(1, currentEditor.state.doc.content.size);
+    currentEditor.commands.setTextSelection({
+      from: Math.min(from, maxPosition),
+      to: Math.min(to, maxPosition),
+    });
   }, [content]);
+
+  const flushScrollPosition = useCallback(() => {
+    if (scrollPositionTimerRef.current) {
+      clearTimeout(scrollPositionTimerRef.current);
+      scrollPositionTimerRef.current = null;
+    }
+    const scrollPosition = scrollContainerRef.current?.scrollTop ?? latestScrollTopRef.current;
+    latestScrollTopRef.current = scrollPosition;
+    onScrollPositionChange?.(scrollPosition);
+  }, [onScrollPositionChange]);
+
+  const handleEditorScroll = useCallback(() => {
+    if (!onScrollPositionChange) return;
+
+    const scrollPosition = scrollContainerRef.current?.scrollTop;
+    if (scrollPosition === undefined) return;
+
+    latestScrollTopRef.current = scrollPosition;
+    if (scrollPositionTimerRef.current) return;
+
+    scrollPositionTimerRef.current = setTimeout(() => {
+      scrollPositionTimerRef.current = null;
+      onScrollPositionChange?.(latestScrollTopRef.current);
+    }, 250);
+  }, [onScrollPositionChange]);
+
+  useEffect(() => {
+    if (!onScrollPositionChange) return;
+
+    return flushScrollPosition;
+  }, [flushScrollPosition, onScrollPositionChange]);
+
+  useEffect(() => {
+    if (!editor || !onScrollPositionChange) return;
+
+    let restoreFrameId: number | null = null;
+    const frameId = window.requestAnimationFrame(() => {
+      restoreFrameId = window.requestAnimationFrame(() => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+
+        const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+        const restoredScrollTop = Math.min(initialScrollTopRef.current, maxScrollTop);
+        container.scrollTop = restoredScrollTop;
+        latestScrollTopRef.current = restoredScrollTop;
+        if (restoredScrollTop !== initialScrollTopRef.current) {
+          onScrollPositionChange?.(restoredScrollTop);
+        }
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      if (restoreFrameId !== null) window.cancelAnimationFrame(restoreFrameId);
+    };
+  }, [editor, onScrollPositionChange]);
 
   useHotkeys(
     "mod+s",
@@ -157,8 +230,10 @@ export function MarkdownEditor({
       />
 
       <Box
+        ref={scrollContainerRef}
         style={{ flex: 1, minHeight: 0, overflow: "auto" }}
         className="tiptap-editor-wrapper"
+        onScroll={handleEditorScroll}
       >
         <Box
           style={{
