@@ -67,6 +67,10 @@ jobs:
       - name: Build Python package
         working-directory: backend
         run: uv build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: backend-dist
+          path: backend/dist/*.whl
 
   docker:
     name: Docker (${{ matrix.platform }})
@@ -93,7 +97,7 @@ jobs:
 
   desktop:
     name: Desktop (${{ matrix.os }} ${{ matrix.arch }})
-    needs: frontend
+    needs: [frontend, python]
     if: "!startsWith(github.event.pull_request.head.ref, 'release-please--')"
     strategy:
       fail-fast: false
@@ -124,6 +128,11 @@ jobs:
         with:
           name: frontend-dist
           path: frontend/dist
+      - uses: actions/download-artifact@v8
+        if: matrix.os == 'macos-15'
+        with:
+          name: backend-dist
+          path: backend-dist
       - uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
@@ -143,9 +152,72 @@ jobs:
       - name: Build desktop application
         working-directory: desktop
         run: pnpm build
+      - name: Smoke test macOS runtime
+        if: matrix.os == 'macos-15'
+        working-directory: desktop
+        timeout-minutes: 20
+        run: pnpm exec electron tests/main/runtime-smoke.mjs ../backend-dist/openfic-*.whl
       - name: Build desktop package
         working-directory: desktop
         run: pnpm exec electron-builder --config electron-builder.yml ${{ matrix.target }} --${{ matrix.arch }} --publish never
+      - name: Verify macOS disk images
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        run: |
+          shopt -s nullglob
+          dmg_files=(dist-electron/*.dmg)
+          ((${#dmg_files[@]}))
+          for dmg_file in "${dmg_files[@]}"; do
+            hdiutil verify "$dmg_file"
+          done
+      - name: Install and launch macOS application
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmg_files=(dist-electron/OpenFic-*-mac-${{ matrix.arch }}.dmg)
+          ((${#dmg_files[@]} == 1))
+
+          mount_dir=$(mktemp -d)
+          install_dir=$(mktemp -d)
+          user_data_dir=$(mktemp -d)
+          app_log=$(mktemp)
+          app_pid=""
+          is_mounted=false
+
+          cleanup() {
+            if [[ "$is_mounted" == true ]]; then hdiutil detach "$mount_dir" -quiet || true; fi
+            if [[ -n "$app_pid" ]] && kill -0 "$app_pid" 2>/dev/null; then
+              kill "$app_pid" || true
+              sleep 2
+              if kill -0 "$app_pid" 2>/dev/null; then kill -9 "$app_pid" || true; fi
+              wait "$app_pid" || true
+            fi
+            rm -rf "$mount_dir" "$install_dir" "$user_data_dir" "$app_log"
+          }
+          trap cleanup EXIT
+
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount_dir" "${dmg_files[0]}"
+          is_mounted=true
+          app_sources=("$mount_dir"/*.app)
+          ((${#app_sources[@]} == 1))
+          ditto "${app_sources[0]}" "$install_dir/OpenFic.app"
+          hdiutil detach "$mount_dir" -quiet
+          is_mounted=false
+
+          "$install_dir/OpenFic.app/Contents/MacOS/OpenFic" --user-data-dir="$user_data_dir" > "$app_log" 2>&1 &
+          app_pid=$!
+          for _ in {1..10}; do
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              cat "$app_log"
+              wait "$app_pid"
+              exit 1
+            fi
+            sleep 1
+          done
 
   summary:
     name: Summary
