@@ -65,6 +65,10 @@ from app.background.runtime.supervisor import (
     start_background_runtime,
     stop_background_runtime,
 )
+from app.agent_runtime.attachments import (
+    cleanup_orphaned_agent_attachment_files,
+    ensure_agent_attachments_dir,
+)
 from app.core.storage import ensure_character_images_dir, ensure_covers_dir
 from app.chapter_export.service import cleanup_chapter_export_files
 from app.models.builtin import seed_builtin_models
@@ -160,6 +164,16 @@ async def _cleanup_chapter_export_files() -> None:
         deleted_files = await cleanup_chapter_export_files(session)
         if deleted_files:
             logger.info(f"Deleted {deleted_files} expired or unreachable chapter export files")
+    finally:
+        await session.close()
+
+
+async def _cleanup_orphaned_agent_attachment_files() -> None:
+    session = await create_session()
+    try:
+        deleted_files = await cleanup_orphaned_agent_attachment_files(session)
+        if deleted_files:
+            logger.info(f"Deleted {deleted_files} orphaned agent attachment files at startup")
     finally:
         await session.close()
 
@@ -322,6 +336,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await init_checkpointer()
     await _cleanup_unreachable_checkpoints()
     await _cleanup_chapter_export_files()
+    await _cleanup_orphaned_agent_attachment_files()
     await load_audit_details_persistence()
     start_audit_queue()
     await start_background_runtime()
@@ -415,6 +430,13 @@ def create_app() -> FastAPI:
         "/character-images",
         StaticFiles(directory=str(character_images_dir)),
         name="character_images",
+    )
+
+    agent_attachments_dir = ensure_agent_attachments_dir()
+    app.mount(
+        "/agent-attachments",
+        StaticFiles(directory=str(agent_attachments_dir)),
+        name="agent_attachments",
     )
 
     # 挂载前端构建产物；开发环境未构建时跳过，避免后端启动失败。

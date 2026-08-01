@@ -1,15 +1,34 @@
 import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
-import { ArrowUp, CircleUserRound, ExternalLink, ShieldCheck, Square } from "lucide-react";
+import {
+  ArrowUp,
+  CircleUserRound,
+  CloudUpload,
+  ExternalLink,
+  ShieldCheck,
+  Square,
+  X,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { PhotoProvider, PhotoView } from "react-photo-view";
+
+import "react-photo-view/dist/react-photo-view.css";
 
 import { ModelIdSelect, Spinner, type ModelIdSelectOption } from "@/components";
+import { toast } from "@/components";
 import { SimpleSelect, type SelectOption } from "@/components/select";
 import { ProviderIcon } from "@/features/settings/lib/provider-icons";
 import type { AgentPendingMessage, AgentSessionStatus, ReasoningEffort } from "@/lib/agent.types";
 
+import {
+  getAgentImageFiles,
+  hasLeftAgentImageDropZone,
+  modelAllowsAgentImages,
+  type PendingAgentImageAttachment,
+  validateAgentImageFiles,
+} from "../../lib/agent-image-attachments";
 import { AgentComposerEditor, type AgentComposerSuggestionState } from "./agent-composer-editor";
 import { AgentIndexStatusIndicator } from "./agent-index-status-indicator";
 import { canSendAgentInput, getAgentInputBodyMode, isAgentInputLocked } from "./agent-input-state";
@@ -19,6 +38,7 @@ import { AgentPendingMessageCard } from "./pending-message-card";
 interface AgentInputProps {
   projectId: string;
   value: string;
+  attachments: PendingAgentImageAttachment[];
   modelId: string;
   models: ModelIdSelectOption[];
   reasoningEffort?: ReasoningEffort;
@@ -29,6 +49,7 @@ interface AgentInputProps {
   isModelsLoading: boolean;
   modelsError: boolean;
   onChange: (value: string) => void;
+  onAttachmentsChange: (attachments: PendingAgentImageAttachment[]) => void;
   onSend: () => void;
   onAbort: () => void;
   onModelChange: (modelId: string) => void;
@@ -46,12 +67,14 @@ interface AgentInputProps {
   forceSpecialPanels?: boolean;
   readOnly?: boolean;
   readOnlyMessage?: ReactNode;
+  onUploadAttachments: (files: File[]) => Promise<void>;
   [ignoredModeSelectorProp: string]: unknown;
 }
 
 export function AgentInput({
   projectId,
   value,
+  attachments,
   modelId,
   models,
   reasoningEffort,
@@ -62,6 +85,7 @@ export function AgentInput({
   isModelsLoading,
   modelsError,
   onChange,
+  onAttachmentsChange,
   onSend,
   onAbort,
   onModelChange,
@@ -79,10 +103,11 @@ export function AgentInput({
   forceSpecialPanels = false,
   readOnly = false,
   readOnlyMessage,
+  onUploadAttachments,
 }: AgentInputProps) {
   const { t } = useTranslation();
   const bodyMode = getAgentInputBodyMode(agentStatus, Boolean(specialPanels), forceSpecialPanels);
-  const hasContent = value.trim().length > 0;
+  const hasContent = value.trim().length > 0 || attachments.length > 0;
   const hasPendingMessage = pendingMessage !== null;
   const isComposerLocked = isAgentInputLocked({
     disabled,
@@ -107,6 +132,11 @@ export function AgentInput({
   const selectedModel = useMemo(
     () => models.find((model) => model.value === modelId || model.id === modelId),
     [modelId, models],
+  );
+  const [isDraggingImages, setIsDraggingImages] = useState(false);
+  const canAttachImages = modelAllowsAgentImages(
+    selectedModel?.inputModalities,
+    selectedModel?.isCatalogMatched === true,
   );
   const modelTriggerPrefix = selectedModel ? (
     <ProviderIcon
@@ -160,12 +190,66 @@ export function AgentInput({
     };
   }, [bodyMode, isComposerLocked, readOnly]);
 
+  useEffect(() => {
+    if (!isDraggingImages) return;
+
+    const clearDraggingImages = () => setIsDraggingImages(false);
+    window.addEventListener("dragend", clearDraggingImages);
+    window.addEventListener("drop", clearDraggingImages);
+    return () => {
+      window.removeEventListener("dragend", clearDraggingImages);
+      window.removeEventListener("drop", clearDraggingImages);
+    };
+  }, [isDraggingImages]);
+
   const getPlaceholder = () => {
     if (agentStatus === "waiting_answer")
       return t("writing.aiSidebar.inputPlaceholderWaitingAnswer");
     if (agentStatus === "waiting_approval")
       return t("writing.aiSidebar.inputPlaceholderWaitingApproval");
     return t("writing.aiSidebar.inputPlaceholder");
+  };
+
+  const handleFiles = async (files: File[]) => {
+    const error = validateAgentImageFiles(files, attachments.length);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    await onUploadAttachments(files);
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    const files = getAgentImageFiles(event.dataTransfer);
+    if (files.length === 0) return;
+    event.preventDefault();
+    setIsDraggingImages(false);
+    if (!canAttachImages) {
+      toast.error(t("writing.aiSidebar.modelImageInputUnsupported"));
+      return;
+    }
+    void handleFiles(files);
+  };
+
+  const handlePastedFiles = (dataTransfer: DataTransfer) => {
+    const files = getAgentImageFiles(dataTransfer);
+    if (files.length === 0) return;
+    if (!canAttachImages) {
+      toast.error(t("writing.aiSidebar.modelImageInputUnsupported"));
+      return;
+    }
+    void handleFiles(files);
+  };
+
+  const handleDroppedFiles = (dataTransfer: DataTransfer) => {
+    setIsDraggingImages(false);
+    handlePastedFiles(dataTransfer);
+  };
+
+  const handleRemoveAttachment = (id: string) => {
+    const attachment = attachments.find((item) => item.id === id);
+    if (attachment) URL.revokeObjectURL(attachment.previewUrl);
+    onAttachmentsChange(attachments.filter((item) => item.id !== id));
   };
 
   return (
@@ -203,7 +287,33 @@ export function AgentInput({
           ref={inputContainerRef}
           className="ai-sidebar-input-container"
           data-mode={bodyMode}
+          data-dragging-images={isDraggingImages || undefined}
+          onDragEnter={(event) => {
+            if (event.dataTransfer.types.includes("Files")) setIsDraggingImages(true);
+          }}
+          onDragOver={(event) => {
+            if (getAgentImageFiles(event.dataTransfer).length > 0) event.preventDefault();
+          }}
+          onDragLeave={(event) => {
+            if (
+              hasLeftAgentImageDropZone(event.relatedTarget, (target) =>
+                event.currentTarget.contains(target),
+              )
+            ) {
+              setIsDraggingImages(false);
+            }
+          }}
+          onDrop={handleDrop}
         >
+          <div
+            className="agent-image-drop-overlay"
+            aria-hidden="true"
+          >
+            <span className="agent-image-drop-overlay-content">
+              <CloudUpload size={16} />
+              {t("writing.aiSidebar.dropImageAttachments")}
+            </span>
+          </div>
           <AnimatePresence
             initial={false}
             mode="wait"
@@ -253,6 +363,45 @@ export function AgentInput({
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.18, ease: "easeOut" }}
               >
+                {attachments.length > 0 ? (
+                  <PhotoProvider>
+                    <div className="agent-image-attachment-strip">
+                      {attachments.map((attachment) => {
+                        const fileName =
+                          attachment.file?.name ??
+                          attachment.uploadedAttachment?.fileName ??
+                          t("writing.aiSidebar.imageFallbackAlt");
+                        return (
+                          <div
+                            key={attachment.id}
+                            className="agent-image-attachment-preview"
+                          >
+                            <PhotoView src={attachment.previewUrl}>
+                              <button
+                                type="button"
+                                className="agent-image-preview-trigger"
+                                aria-label={t("writing.aiSidebar.viewImage", { fileName })}
+                              >
+                                <img
+                                  src={attachment.previewUrl}
+                                  alt={fileName}
+                                />
+                              </button>
+                            </PhotoView>
+                            <button
+                              type="button"
+                              className="agent-image-attachment-remove"
+                              aria-label={t("writing.aiSidebar.removeImage", { fileName })}
+                              onClick={() => handleRemoveAttachment(attachment.id)}
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </PhotoProvider>
+                ) : null}
                 <AgentComposerEditor
                   projectId={projectId}
                   placeholder={getPlaceholder()}
@@ -260,6 +409,8 @@ export function AgentInput({
                   disabled={isComposerLocked}
                   onOpenMentionChapter={onOpenMentionChapter}
                   onMentionSuggestionsChange={setMentionSuggestions}
+                  onPasteFiles={handlePastedFiles}
+                  onDropFiles={handleDroppedFiles}
                   onChange={onChange}
                   onSubmit={onSend}
                 />
