@@ -2,13 +2,14 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { DesktopHeader } from "./components/header";
 import { DesktopNotices } from "./components/desktop-notices";
 import { BootPage } from "./pages/boot/page";
+import { DataManagementPage } from "./pages/data-management/page";
 import { FrontendPage } from "./pages/frontend/page";
 import { SetupPage } from "./pages/setup/page";
 import i18n, { isDesktopLanguage } from "./i18n";
 import type { DesktopConfig } from "../shared/config";
 import type { StartupProgressEvent, UpdateState } from "../shared/ipc";
 
-type ShellState = "booting" | "setup" | "frontend";
+type ShellState = "booting" | "setup" | "frontend" | "data";
 type Appearance = "light" | "dark";
 type SetupInitialStep = "mode" | "remote" | "local-directory" | "local-success";
 
@@ -176,6 +177,8 @@ export function App() {
   const [updateState, setUpdateState] = useState<UpdateState>({ status: "idle" });
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [instancePanelOpen, setInstancePanelOpen] = useState(false);
+  const [dataManagementPrevState, setDataManagementPrevState] = useState<ShellState | null>(null);
+  const [dataManagementInstanceId, setDataManagementInstanceId] = useState<string | null>(null);
   const [startupProgress, setStartupProgress] = useState<StartupProgressEvent | null>(null);
   const [frontendWebview, setFrontendWebview] = useState<HTMLElement | null>(null);
   const lastAutoUpdateCheck = useRef<string | null>(null);
@@ -357,6 +360,31 @@ export function App() {
     setShellState("setup");
   };
 
+  const handleOpenDataManagement = () => {
+    setError(null);
+    setDataManagementPrevState(shellState);
+    setDataManagementInstanceId(shellState === "frontend" ? activeInstanceId : null);
+    setShellState("data");
+  };
+
+  const handleOpenDataManagementFor = (instanceId: string) => {
+    setError(null);
+    setDataManagementPrevState(shellState);
+    setDataManagementInstanceId(instanceId);
+    setShellState("data");
+  };
+
+  const handleCloseDataManagement = async () => {
+    const prevState = dataManagementPrevState ?? "frontend";
+    setDataManagementPrevState(null);
+    setDataManagementInstanceId(null);
+    if (prevState === "frontend" && activeInstance?.mode === "local") {
+      await handleSwitchInstance(activeInstance.id);
+      return;
+    }
+    setShellState(prevState);
+  };
+
   const handleAddInstance = () => {
     const hasLocalInstance = config?.instances.some((instance) => instance.mode === "local") ?? false;
     handleShowSetup(hasLocalInstance ? "remote" : "mode");
@@ -418,6 +446,7 @@ export function App() {
         remoteUrl: normalizedUrl,
         autoStartLocal: false,
         installDir: null,
+        dataDir: null,
       };
       const nextConfig: DesktopConfig = {
         activeInstanceId: previousConfig?.activeInstanceId ?? null,
@@ -524,6 +553,7 @@ export function App() {
         disabled={shellState === "booting"}
         onAddInstance={handleAddInstance}
         onOpenSetup={() => handleShowSetup()}
+        onOpenDataManagement={handleOpenDataManagement}
         onSaveConfig={handleSaveConfig}
         onSwitchInstance={handleSwitchInstance}
         instancePanelOpen={instancePanelOpen}
@@ -556,11 +586,22 @@ export function App() {
             onClearError={() => setError(null)}
             onConnectRemote={(url) => void handleConnectRemote(url)}
             onConnectInstance={(instanceId) => void handleSwitchInstance(instanceId)}
+            onOpenDataManagementFor={handleOpenDataManagementFor}
             onStartLocal={(installDir) => void handleStartLocal(installDir)}
           />
         ) : null}
         {shellState === "frontend" && frontendReadyPartition ? (
           <FrontendPage webviewKey={webviewKey} partition={frontendReadyPartition} webviewRef={setFrontendWebview} />
+        ) : null}
+        {shellState === "data" ? (
+          <DataManagementPage
+            instanceId={dataManagementInstanceId}
+            instances={config?.instances ?? []}
+            backendRunning={dataManagementPrevState === "frontend"}
+            onSelectInstance={setDataManagementInstanceId}
+            onClose={handleCloseDataManagement}
+            onConfigChanged={() => void refreshConfig()}
+          />
         ) : null}
       </section>
       <DesktopNotices
