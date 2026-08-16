@@ -87,11 +87,20 @@
     "connectServiceMessage": "Connecting to service",
     "checkCompatibilityTitle": "Checking version compatibility",
     "checkCompatibilityMessage": "Comparing desktop and backend versions",
+    "databaseMaintenanceTitle": "Maintaining local database",
+    "databaseMaintenanceMessage": "Preparing local database maintenance",
+    "databasePruningMessage": "Removing obsolete checkpoints",
+    "databaseMigrationMessage": "Migrating checkpoint database",
+    "databaseVacuumMessage": "Reclaiming freed checkpoint pages",
+    "databaseCleanupMessage": "Cleaning local data",
+    "databaseMaintenanceFailedMessage": "Local database maintenance failed",
+    "databaseMaintenanceSlowHint": " (Database rebuild may take longer depending on data size, please wait...)",
     "serviceReadyTitle": "Service ready",
     "serviceReadyMessage": "OpenFic is ready"
   },
   "boot": {
-    "cancelConnection": "Cancel connection"
+    "cancelConnection": "Cancel connection",
+    "acknowledgeMaintenance": "Got it, continue"
   },
   "setup": {
     "downloadPython": "Download Python",
@@ -136,6 +145,12 @@
     "getStarted": "Get started",
     "welcome": "Welcome to OpenFic",
     "selectInstallDirectory": "Choose an installation directory",
+    "selectDataDirectory": "Choose a data directory",
+    "dataDirectoryDescription": "Your work data will be stored here. The default location is the application data directory.",
+    "dataDirectory": "Data directory",
+    "readingDefaultDataDirectory": "Reading default data directory...",
+    "continue": "Continue",
+    "startLocalInstance": "Start local instance",
     "installingRuntime": "Installing runtime",
     "keepWindowOpen": "Keep this window open. The next step will start automatically when installation is complete."
   },

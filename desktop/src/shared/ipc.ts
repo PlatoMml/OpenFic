@@ -97,6 +97,7 @@ export interface InstallRuntimeRequest {
 
 export interface StartLocalBackendRequest {
   installDir: string;
+  dataDir?: string | null;
 }
 
 export interface InspectLocalRuntimeRequest {
@@ -114,6 +115,7 @@ export interface InitializeAppResult {
   activeInstanceId?: string | null;
   message?: string;
   compatibilityWarning?: string;
+  maintenanceWarning?: string;
 }
 
 export type StartupStep =
@@ -126,6 +128,7 @@ export type StartupStep =
   | "initialize-database"
   | "complete-backend-startup"
   | "check-health"
+  | "maintain-database"
   | "connect-remote"
   | "verify-remote"
   | "check-compatibility"
@@ -138,6 +141,27 @@ export interface StartupProgressEvent {
   message: string;
   /** Overall startup progress as a 0..1 fraction. */
   progress: number;
+  /** Whether the current operation has no reliable percentage. */
+  indeterminate?: boolean;
+  /** Backend maintenance phase used to localize the current detail. */
+  maintenancePhase?:
+    | "pending"
+    | "pruning"
+    | "migrating"
+    | "vacuuming"
+    | "cleanup"
+    | "ready"
+    | "failed";
+  /** Backend maintenance internal progress (0..1), shown as text detail. */
+  maintenanceProgress?: number | null;
+  /** Backend maintenance reclaimed bytes (current), shown as text detail. */
+  maintenanceReclaimedBytes?: number | null;
+  /** Backend maintenance estimated total bytes, shown as text detail. */
+  maintenanceTotalBytes?: number | null;
+  /** Backend maintenance VACUUM VM operations, shown as text detail. */
+  maintenanceVmOps?: number | null;
+  /** Backend maintenance elapsed seconds, shown as text detail. */
+  maintenanceElapsedSeconds?: number | null;
 }
 
 export type UpdateStatus = "unsupported" | "idle" | "checking" | "available" | "downloading" | "downloaded" | "not-available" | "error";

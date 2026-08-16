@@ -87,11 +87,20 @@
     "connectServiceMessage": "正在连接服务",
     "checkCompatibilityTitle": "检查版本兼容性",
     "checkCompatibilityMessage": "正在比较桌面端与后端版本",
+    "databaseMaintenanceTitle": "维护本地数据库",
+    "databaseMaintenanceMessage": "正在准备本地数据库维护",
+    "databasePruningMessage": "正在清理多余的 checkpoint",
+    "databaseMigrationMessage": "正在迁移 checkpoint 数据库",
+    "databaseVacuumMessage": "正在回收 checkpoint 空闲空间",
+    "databaseCleanupMessage": "正在清理本地数据",
+    "databaseMaintenanceFailedMessage": "本地数据库维护失败",
+    "databaseMaintenanceSlowHint": "（重整数据库根据数据量可能耗费更长时间，请耐心等待...）",
     "serviceReadyTitle": "服务已就绪",
     "serviceReadyMessage": "OpenFic 已准备完成"
   },
   "boot": {
-    "cancelConnection": "取消连接"
+    "cancelConnection": "取消连接",
+    "acknowledgeMaintenance": "我知道了，继续"
   },
   "setup": {
     "downloadPython": "下载 Python",
@@ -136,6 +145,12 @@
     "getStarted": "开始使用",
     "welcome": "开始使用 OpenFic",
     "selectInstallDirectory": "选择安装目录",
+    "selectDataDirectory": "选择数据目录",
+    "dataDirectoryDescription": "作品数据将保存在此目录，默认使用应用数据目录。",
+    "dataDirectory": "数据目录",
+    "readingDefaultDataDirectory": "正在读取默认数据目录…",
+    "continue": "继续",
+    "startLocalInstance": "启动本地实例",
     "installingRuntime": "正在安装运行环境",
     "keepWindowOpen": "请保持窗口开启，安装完成后将自动进入下一步。"
   },
